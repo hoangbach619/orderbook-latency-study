@@ -1,0 +1,25 @@
+# Build trees
+/build/
+/build-*/
+/cmake-build-*/
+_deps/
+CMakeCache.txt
+CMakeFiles/
+compile_commands.json
+CTestTestfile.cmake
+Testing/
+
+# Market data is never committed. Keep the directory's README and placeholder only.
+data/*.csv
+data/*.csv.gz
+data/*.7z
+data/*.zip
+
+# IDE and editor
+.idea/
+.vscode/
+*.swp
+*~
+
+# macOS
+.DS_Store

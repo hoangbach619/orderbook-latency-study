@@ -1,0 +1,17 @@
+---
+Language: Cpp
+BasedOnStyle: Google
+Standard: c++20
+IndentWidth: 4
+ColumnLimit: 92
+AccessModifierOffset: -4
+DerivePointerAlignment: false
+PointerAlignment: Left
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+BreakBeforeBraces: Attach
+IncludeBlocks: Preserve
+SortIncludes: CaseSensitive
+SpaceAfterCStyleCast: false
+...
