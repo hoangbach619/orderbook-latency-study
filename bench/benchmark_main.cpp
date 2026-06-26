@@ -29,6 +29,7 @@
 #include "bench/replay.hpp"
 #include "obls/book_linear.hpp"
 #include "obls/book_map.hpp"
+#include "obls/book_sorted_vector.hpp"
 
 namespace {
 
@@ -239,6 +240,9 @@ int main(int argc, char** argv) {
     run_variant(
         "variant B: contiguous vector with linear scan",
         [&] { return obls::BookLinear(order_hint, level_hint); }, events, timer);
+    run_variant(
+        "variant C: sorted vector with binary search",
+        [&] { return obls::BookSortedVector(order_hint, level_hint); }, events, timer);
 
     return 0;
 }

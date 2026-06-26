@@ -8,13 +8,16 @@
 #include "bench/replay.hpp"
 #include "obls/book_linear.hpp"
 #include "obls/book_map.hpp"
+#include "obls/book_sorted_vector.hpp"
 
 namespace {
 
 // Compares the full ladder on both sides. Returns true only when prices and aggregate
 // quantities match rank for rank, which is the strongest observable equality available
-// without reaching into either variant's private layout.
-bool same_ladder(const obls::BookMap& a, const obls::BookLinear& b) {
+// without reaching into either variant's private layout. Templated over the two book
+// types so a single comparison drives every pairing of variants.
+template <typename A, typename B>
+bool same_ladder(const A& a, const B& b) {
     if (a.bid_depth() != b.bid_depth() || a.ask_depth() != b.ask_depth()) {
         return false;
     }
@@ -35,7 +38,8 @@ bool same_ladder(const obls::BookMap& a, const obls::BookLinear& b) {
     return true;
 }
 
-bool same_top(const obls::BookMap& a, const obls::BookLinear& b) {
+template <typename A, typename B>
+bool same_top(const A& a, const B& b) {
     const obls::Level ab = a.best_bid();
     const obls::Level bb = b.best_bid();
     const obls::Level aa = a.best_ask();
@@ -46,31 +50,42 @@ bool same_top(const obls::BookMap& a, const obls::BookLinear& b) {
 
 }  // namespace
 
-TEST_CASE("map and linear variants agree step by step") {
+TEST_CASE("map, linear, and sorted variants agree step by step") {
     const std::vector<obls::Event> events = obls::make_synthetic_stream(40000);
     const obls::StreamStats stats = obls::analyse(events);
 
     obls::BookMap map_book(stats.peak_live_estimate + 1024);
     obls::BookLinear linear_book(stats.peak_live_estimate + 1024, stats.add_count + 1024);
+    obls::BookSortedVector sorted_book(stats.peak_live_estimate + 1024,
+                                       stats.add_count + 1024);
 
+    // The map is the reference. Holding both vector variants against it each step proves
+    // all three agree by transitivity, which is what makes the three way latency
+    // comparison a comparison of structures rather than of behaviours.
     std::size_t step = 0;
     for (const obls::Event& event : events) {
         obls::apply(map_book, event);
         obls::apply(linear_book, event);
+        obls::apply(sorted_book, event);
 
         // Top of book is checked every step because it is the cheapest strong signal and
         // the quantity most sensitive to an ordering bug.
         REQUIRE(same_top(map_book, linear_book));
+        REQUIRE(same_top(map_book, sorted_book));
 
         // The full ladder is checked periodically to keep the assertion count tractable
         // while still catching a divergence deep in the book.
         if (step % 250 == 0) {
             REQUIRE(same_ladder(map_book, linear_book));
+            REQUIRE(same_ladder(map_book, sorted_book));
         }
         ++step;
     }
 
     REQUIRE(same_ladder(map_book, linear_book));
+    REQUIRE(same_ladder(map_book, sorted_book));
     REQUIRE(map_book.bid_depth() == linear_book.bid_depth());
+    REQUIRE(map_book.bid_depth() == sorted_book.bid_depth());
     REQUIRE(map_book.ask_depth() == linear_book.ask_depth());
+    REQUIRE(map_book.ask_depth() == sorted_book.ask_depth());
 }
