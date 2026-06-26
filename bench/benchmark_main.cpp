@@ -27,6 +27,7 @@
 #include "bench/percentiles.hpp"
 #include "bench/perf_counters.hpp"
 #include "bench/replay.hpp"
+#include "obls/book_branchless.hpp"
 #include "obls/book_linear.hpp"
 #include "obls/book_map.hpp"
 #include "obls/book_sorted_vector.hpp"
@@ -243,6 +244,12 @@ int main(int argc, char** argv) {
     run_variant(
         "variant C: sorted vector with binary search",
         [&] { return obls::BookSortedVector(order_hint, level_hint); }, events, timer);
+    // Variant D prints its branch miss rate alongside the others on purpose: the claim it
+    // exists to test is that the conditional move lowers that rate relative to variant C,
+    // so the counter line is part of D's result, not just context.
+    run_variant(
+        "variant D: branchless binary search",
+        [&] { return obls::BookBranchless(order_hint, level_hint); }, events, timer);
 
     return 0;
 }

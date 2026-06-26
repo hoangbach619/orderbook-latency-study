@@ -6,6 +6,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "bench/replay.hpp"
+#include "obls/book_branchless.hpp"
 #include "obls/book_linear.hpp"
 #include "obls/book_map.hpp"
 #include "obls/book_sorted_vector.hpp"
@@ -50,7 +51,7 @@ bool same_top(const A& a, const B& b) {
 
 }  // namespace
 
-TEST_CASE("map, linear, and sorted variants agree step by step") {
+TEST_CASE("map, linear, sorted, and branchless variants agree step by step") {
     const std::vector<obls::Event> events = obls::make_synthetic_stream(40000);
     const obls::StreamStats stats = obls::analyse(events);
 
@@ -58,34 +59,44 @@ TEST_CASE("map, linear, and sorted variants agree step by step") {
     obls::BookLinear linear_book(stats.peak_live_estimate + 1024, stats.add_count + 1024);
     obls::BookSortedVector sorted_book(stats.peak_live_estimate + 1024,
                                        stats.add_count + 1024);
+    obls::BookBranchless branchless_book(stats.peak_live_estimate + 1024,
+                                         stats.add_count + 1024);
 
-    // The map is the reference. Holding both vector variants against it each step proves
-    // all three agree by transitivity, which is what makes the three way latency
-    // comparison a comparison of structures rather than of behaviours.
+    // The map is the reference. Holding the three vector variants against it each step
+    // proves all four agree by transitivity, which is what makes the four way latency
+    // comparison a comparison of structures rather than of behaviours. For variant D this
+    // also guards the branchless index arithmetic, where an off by one in the final
+    // position would surface here as a divergence from the map.
     std::size_t step = 0;
     for (const obls::Event& event : events) {
         obls::apply(map_book, event);
         obls::apply(linear_book, event);
         obls::apply(sorted_book, event);
+        obls::apply(branchless_book, event);
 
         // Top of book is checked every step because it is the cheapest strong signal and
         // the quantity most sensitive to an ordering bug.
         REQUIRE(same_top(map_book, linear_book));
         REQUIRE(same_top(map_book, sorted_book));
+        REQUIRE(same_top(map_book, branchless_book));
 
         // The full ladder is checked periodically to keep the assertion count tractable
         // while still catching a divergence deep in the book.
         if (step % 250 == 0) {
             REQUIRE(same_ladder(map_book, linear_book));
             REQUIRE(same_ladder(map_book, sorted_book));
+            REQUIRE(same_ladder(map_book, branchless_book));
         }
         ++step;
     }
 
     REQUIRE(same_ladder(map_book, linear_book));
     REQUIRE(same_ladder(map_book, sorted_book));
+    REQUIRE(same_ladder(map_book, branchless_book));
     REQUIRE(map_book.bid_depth() == linear_book.bid_depth());
     REQUIRE(map_book.bid_depth() == sorted_book.bid_depth());
+    REQUIRE(map_book.bid_depth() == branchless_book.bid_depth());
     REQUIRE(map_book.ask_depth() == linear_book.ask_depth());
     REQUIRE(map_book.ask_depth() == sorted_book.ask_depth());
+    REQUIRE(map_book.ask_depth() == branchless_book.ask_depth());
 }

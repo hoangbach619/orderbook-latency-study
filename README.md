@@ -43,12 +43,17 @@ loses. Measurement methodology is treated as the product:
 
 ## Variants under test
 
-This first slice implements two variants behind a common C++20 `Book` concept, so the
-harness drives every variant through identical call sites.
+The study implements four variants behind a common C++20 `Book` concept, so the harness
+drives every variant through identical call sites.
 
 - Variant A, `std::map` keyed by price. The baseline that exists to be beaten.
 - Variant B, a contiguous `std::vector` of levels held sorted with the best price at the
   back, scanned linearly from that hot end.
+- Variant C, the same contiguous layout searched with `std::lower_bound`, a binary search
+  whose data dependent comparison is a branch the predictor cannot learn.
+- Variant D, the same binary search with that comparison lowered to a conditional move, so
+  comparing C against D isolates the branch misprediction cost from the cache cost of the
+  jumping probe access pattern that both binary searches share.
 
 A shared open addressing order index maps order id to the stored order, identical across
 variants, because the price level container is the only independent variable in the study.
@@ -106,15 +111,13 @@ contiguous versus tree result reproduced here is from that talk.
 
 ## Roadmap
 
-This first commit is one reviewable vertical slice. Planned later commits, not implemented
-yet:
+Variants A, B, C and D are implemented behind the common `Book` concept. Planned later
+commits, not implemented yet:
 
-- Commit 2, variant C, sorted vector with `std::lower_bound` binary search.
-- Commit 3, variant D, branchless binary search, with a note on the branch misprediction
-  it removes.
 - Commit 4, the depth sweep at roughly ten, one hundred, one thousand, ten thousand, and
   one hundred thousand levels per side, to locate and explain the crossover where linear
-  scan stops winning.
+  scan stops winning and where branchless binary search overtakes the plain one.
 - Commit 5, the results write up in `docs/results.md` with measured distributions, the
-  cache and branch explanation, and a CSV export of raw results.
-- Optional later, an Eytzinger layout variant.
+  cache and branch explanation across all four variants, and a CSV export of raw results.
+- Optional later, an Eytzinger layout variant, which unlike variant D does change the
+  memory layout and so is a genuinely separate structure rather than a drop in replacement.
