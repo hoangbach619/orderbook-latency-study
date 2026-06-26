@@ -51,9 +51,18 @@ inline void sink(const T& value) {
 
 bool pin_to_core(int core) {
 #if defined(__linux__)
+    // A negative core is not a valid cpu index, so reject it before it reaches the cpu
+    // mask. This guard also makes the cast below unambiguously safe.
+    if (core < 0) {
+        return false;
+    }
+    // glibc's CPU_SET converts its argument to an unsigned type to index the mask, which
+    // trips -Werror=sign-conversion when a signed int is passed. core is known non
+    // negative here, so convert it explicitly.
+    const unsigned cpu = static_cast<unsigned>(core);
     cpu_set_t set;
     CPU_ZERO(&set);
-    CPU_SET(core, &set);
+    CPU_SET(cpu, &set);
     return sched_setaffinity(0, sizeof(set), &set) == 0;
 #else
     static_cast<void>(core);
