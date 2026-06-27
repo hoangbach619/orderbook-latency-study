@@ -23,6 +23,10 @@
 #include <sched.h>
 #endif
 
+#if defined(__APPLE__) && defined(__aarch64__)
+#include <pthread/qos.h>
+#endif
+
 #include "bench/clock.hpp"
 #include "bench/percentiles.hpp"
 #include "bench/perf_counters.hpp"
@@ -69,6 +73,16 @@ bool pin_to_core(int core) {
 #else
     static_cast<void>(core);
     return false;
+#endif
+}
+
+// Biases the measuring thread onto a performance core on Apple Silicon. macOS exposes no
+// hard core pinning like sched_setaffinity, so pin_to_core is a no op there; requesting the
+// interactive quality of service class is the closest available lever, nudging the
+// scheduler to keep this thread off the efficiency cores. No op on every other platform.
+void request_measurement_qos() {
+#if defined(__APPLE__) && defined(__aarch64__)
+    pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
 #endif
 }
 
@@ -212,7 +226,18 @@ int main(int argc, char** argv) {
 
     const obls::StreamStats stats = obls::analyse(events);
     const bool pinned = pin_to_core(core);
+    request_measurement_qos();
     const Timer timer = Timer::calibrate();
+
+    // Probe counter availability once, up front, so the run announces whether it will carry
+    // the cache and branch explanation or be timing only. On Apple Silicon the kperf path
+    // needs sudo; without it, as on any platform without counter access, this prints a
+    // single loud warning in the same spirit as the steady clock timer fallback below.
+    bool counters_available = false;
+    {
+        obls::PerfCounters probe;
+        counters_available = probe.available();
+    }
 
     std::printf("orderbook latency study\n");
     std::printf("data           %s\n",
@@ -227,6 +252,11 @@ int main(int argc, char** argv) {
         std::printf(
             "WARNING        steady_clock fallback overhead is too high to trust "
             "single operation timings\n");
+    }
+    if (!counters_available) {
+        std::printf(
+            "WARNING        hardware counters unavailable, this run is timing only "
+            "(on Apple Silicon, run with sudo)\n");
     }
     std::printf("timer overhead %.1f ns (empty read pair, not subtracted below)\n",
                 timer.cycles_to_ns(timer_overhead_cycles()));

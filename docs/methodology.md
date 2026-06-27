@@ -44,6 +44,16 @@ removes scheduler migration and the cold caches that follow a migration. On the 
 machine the chosen core should also be isolated from the scheduler and from interrupts so
 that nothing else runs on it during a measurement.
 
+On Apple Silicon there is no equivalent hard pinning to an isolated core, so that step is a
+no op there. Instead the measuring thread requests the `QOS_CLASS_USER_INTERACTIVE` quality
+of service class, which biases the scheduler to keep it on a performance core rather than an
+efficiency core. This is a softer guarantee than `sched_setaffinity`: the thread is not
+isolated and may still be preempted, so on Apple Silicon noise is kept down by running on an
+otherwise quiet machine and by reading the percentile distribution over many samples rather
+than trusting any single figure. The hardware counters on Apple Silicon are read through the
+kperf framework, which requires running the benchmark under `sudo`; without it the run is
+timing only.
+
 ## Warm up
 
 Before any sample is recorded, the full event stream is replayed once on a throwaway
