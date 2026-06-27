@@ -35,6 +35,12 @@ target_compile_features(obls_lib INTERFACE cxx_std_20)
 # Benchmark binary. Not run in continuous integration; see .github/workflows/ci.yml.
 add_executable(obls_bench bench/benchmark_main.cpp)
 target_link_libraries(obls_bench PRIVATE obls_lib)
+# Resolve the real LOBSTER sample and the sweep output location by absolute path, so the
+# benchmark finds them regardless of the working directory it is launched from. The data
+# file is git ignored, so on a machine without it the benchmark falls back to synthetic.
+target_compile_definitions(obls_bench PRIVATE
+    OBLS_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data"
+    OBLS_RESULTS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/results")
 obls_set_warnings(obls_bench)
 obls_enable_sanitizers(obls_bench)
 if(OBLS_NATIVE_TUNING)

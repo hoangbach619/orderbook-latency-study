@@ -37,6 +37,27 @@ test passing everywhere, but the per call overhead of `steady_clock` is far too 
 time a single book operation honestly. The benchmark therefore flags the fallback loudly
 and the measurement runs assume x86 Linux with an invariant time stamp counter.
 
+## Primary metric on Apple Silicon
+
+Apple Silicon has no `rdtscp`, and the user readable wall clock the fallback reads ticks at
+roughly 24 MHz, about 42 ns per tick. A single book operation costs far less than that, so
+the wall clock cannot resolve it: per operation medians land exactly on multiples of one
+tick, 42, 83, 125 ns, which is quantisation, not signal. Chasing a finer wall clock is not
+possible on this hardware.
+
+The honest response is to change which metric is primary rather than to trust a clock that
+cannot measure the thing. The kperf cycle counter ticks at the core frequency, on the order
+of 3.5 GHz, so it resolves a single operation to a fraction of a nanosecond. On Apple Silicon
+the primary figure is therefore cycles per operation, taken from the counter total over a
+bracketed batch divided by the operation count, with branch misses per operation and cache
+misses per operation beside it. These three are the trustworthy fine grained metrics here.
+
+The nanosecond percentiles are still printed but read honestly: the median sits on the timer
+floor and is meaningless at the fine end, while the tail, p99 and beyond, is large enough
+that the 42 ns quantisation does not wash it out, and the tail is the trading relevant part
+anyway. So on Apple Silicon, interpret cycles per operation for central tendency and only the
+tail of the nanosecond distribution, never its median.
+
 ## Thread pinning
 
 The benchmark pins itself to a single core with `sched_setaffinity` before measuring, which
@@ -53,6 +74,25 @@ otherwise quiet machine and by reading the percentile distribution over many sam
 than trusting any single figure. The hardware counters on Apple Silicon are read through the
 kperf framework, which requires running the benchmark under `sudo`; without it the run is
 timing only.
+
+## Real market data and reconstruction
+
+Realistic runs replay the real LOBSTER AAPL message file, which carries the actual price
+distribution, depth dynamics, and operation mix of a trading day. The book is reconstructed
+by replaying those messages from empty. The sample opens with a non empty book, since the
+opening auction rests orders before the first in window message, and those orders carry no
+identity the message stream can reference, so the reconstruction is not identical to the
+published orderbook file and the external validation test cannot pass on this sample. This
+does not affect the comparison the study makes: every variant is driven by the same
+reconstructed book through the same call sites, so the price level container stays the only
+independent variable. The reconstructed book is a real, internally consistent order book
+driven by real order flow, simply not the auction exact published one.
+
+The depth sweep takes its shallow realistic depths, ten and one hundred, from this real book
+by snapshotting it and taking the top levels, as deep as the real sample supports, which is
+around nine hundred levels per side. The extreme depths, ten thousand and one hundred
+thousand, which no real equity reaches, use a synthetic deep book seeded 42. Every sweep row
+is labelled with its source.
 
 ## Warm up
 

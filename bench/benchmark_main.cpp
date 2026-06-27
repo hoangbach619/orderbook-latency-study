@@ -31,6 +31,7 @@
 #include "bench/percentiles.hpp"
 #include "bench/perf_counters.hpp"
 #include "bench/replay.hpp"
+#include "bench/sweep.hpp"
 #include "obls/book_branchless.hpp"
 #include "obls/book_linear.hpp"
 #include "obls/book_map.hpp"
@@ -160,11 +161,29 @@ void run_variant(const char* name, Factory make_book, const std::vector<Event>& 
     counters.stop();
     const obls::CounterReading reading = counters.read_counters();
 
+    // Mutating operations are the denominator for the per operation counter figures. The
+    // bracketed region also covers the interleaved best quote reads and the timing reads,
+    // so these per op numbers carry a constant harness overhead that is identical across
+    // variants; the depth sweep measures a clean lookup batch without that overhead.
+    const std::size_t op_count = add_s.size() + cancel_s.size() + reduce_s.size();
+
     std::printf("\n%s\n", name);
     print_op("add", add_s.compute(), timer);
     print_op("cancel", cancel_s.compute(), timer);
     print_op("reduce", reduce_s.compute(), timer);
     print_op("best_quote", quote_s.compute(), timer);
+    if (reading.available && op_count > 0) {
+        // Cycles per operation is the headline on Apple Silicon, where the wall clock ticks
+        // only every 42 ns and so cannot resolve a single operation, while the cycle
+        // counter ticks at the core frequency. Branch and cache misses per operation sit
+        // beside it as the trustworthy fine grained explanation.
+        const double ops = static_cast<double>(op_count);
+        std::printf(
+            "    per-op      cyc/op=%9.1f  branch-miss/op=%.3f  cache-miss/op=%.3f\n",
+            static_cast<double>(reading.cycles) / ops,
+            static_cast<double>(reading.branch_misses) / ops,
+            static_cast<double>(reading.cache_misses) / ops);
+    }
     if (reading.available) {
         std::printf(
             "    counters    IPC=%.2f  branch-miss=%.2f%%  cache-miss=%.2f /1k-instr\n",
@@ -194,6 +213,8 @@ int main(int argc, char** argv) {
     std::size_t synthetic_count = 1'000'000;
     std::size_t max_events = 0;  // zero means no cap
     int core = 2;
+    bool force_synthetic = false;
+    bool sweep_mode = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -204,17 +225,34 @@ int main(int argc, char** argv) {
             max_events = static_cast<std::size_t>(std::strtoull(argv[++i], nullptr, 10));
         } else if (arg == "--core" && i + 1 < argc) {
             core = std::atoi(argv[++i]);
+        } else if (arg == "--synthetic") {
+            force_synthetic = true;
+        } else if (arg == "--sweep") {
+            sweep_mode = true;
         } else if (!arg.empty() && arg[0] != '-') {
             data_path = arg;
         }
     }
 
+    // Realistic runs default to the real LOBSTER AAPL sample, resolved by absolute path so
+    // the working directory does not matter. --synthetic forces the deterministic
+    // generator, and the file being absent on a machine without it also falls back to
+    // synthetic. Either way the header below names the source so a reader never mistakes
+    // one for the other.
+    if (data_path.empty() && !force_synthetic) {
+#if defined(OBLS_DATA_DIR)
+        data_path = std::string(OBLS_DATA_DIR) +
+                    "/AAPL_2012-06-21_34200000_57600000_message_10.csv";
+#endif
+    }
+
     std::vector<Event> events;
     bool synthetic = true;
-    if (!data_path.empty() && obls::load_lobster_messages(data_path, events)) {
+    if (!force_synthetic && !data_path.empty() &&
+        obls::load_lobster_messages(data_path, events)) {
         synthetic = false;
     } else {
-        if (!data_path.empty()) {
+        if (!force_synthetic && !data_path.empty()) {
             std::printf("could not open %s, falling back to synthetic data\n",
                         data_path.c_str());
         }
@@ -240,8 +278,11 @@ int main(int argc, char** argv) {
     }
 
     std::printf("orderbook latency study\n");
-    std::printf("data           %s\n",
-                synthetic ? "SYNTHETIC (deterministic, seed 42)" : data_path.c_str());
+    if (synthetic) {
+        std::printf("data           SYNTHETIC (deterministic, seed 42)\n");
+    } else {
+        std::printf("data           LOBSTER real market data, %s\n", data_path.c_str());
+    }
     std::printf("events         %zu\n", events.size());
     std::printf("peak live est  %zu\n", stats.peak_live_estimate);
     std::printf("core pinned    %s\n", pinned ? "yes" : "no (not Linux or denied)");
@@ -261,6 +302,18 @@ int main(int argc, char** argv) {
     std::printf("timer overhead %.1f ns (empty read pair, not subtracted below)\n",
                 timer.cycles_to_ns(timer_overhead_cycles()));
     std::printf("all latencies below are in nanoseconds\n");
+
+    // Depth sweep mode runs the crossover experiment and exits, rather than the single
+    // depth per variant benchmark. It builds its own books at each depth, using the real
+    // events here only to snapshot the LOBSTER book for the shallow realistic rows.
+    if (sweep_mode) {
+        std::string csv_path = "depth_sweep.csv";
+#if defined(OBLS_RESULTS_DIR)
+        csv_path = std::string(OBLS_RESULTS_DIR) + "/depth_sweep.csv";
+#endif
+        obls::run_depth_sweep(events, !synthetic, csv_path);
+        return 0;
+    }
 
     const std::size_t order_hint =
         stats.peak_live_estimate < 1024 ? 1024 : stats.peak_live_estimate;
