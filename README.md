@@ -111,13 +111,9 @@ contiguous versus tree result reproduced here is from that talk.
 
 ## Roadmap
 
-Variants A, B, C and D are implemented behind the common `Book` concept. Planned later
-commits, not implemented yet:
+Variants A, B, C and D are implemented behind the common `Book` concept, the depth sweep in
+`bench/sweep.hpp` locates the crossover, and `docs/results.md` writes up the measured result
+with its cache and branch explanation. One direction remains open:
 
-- Commit 4, the depth sweep at roughly ten, one hundred, one thousand, ten thousand, and
-  one hundred thousand levels per side, to locate and explain the crossover where linear
-  scan stops winning and where branchless binary search overtakes the plain one.
-- Commit 5, the results write up in `docs/results.md` with measured distributions, the
-  cache and branch explanation across all four variants, and a CSV export of raw results.
 - Optional later, an Eytzinger layout variant, which unlike variant D does change the
   memory layout and so is a genuinely separate structure rather than a drop in replacement.
